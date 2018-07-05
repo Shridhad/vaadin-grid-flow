@@ -22,25 +22,22 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.FormatStyle;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Optional;
-import java.util.Random;
+import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiPredicate;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
+import com.vaadin.flow.component.*;
+import com.vaadin.flow.component.button.Button;
+import com.vaadin.flow.dom.Style;
+import com.vaadin.flow.shared.Registration;
+import lombok.AllArgsConstructor;
+import lombok.NonNull;
 import org.apache.commons.lang3.StringUtils;
 
-import com.vaadin.flow.component.Component;
 import com.vaadin.flow.component.checkbox.Checkbox;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.grid.Grid.Column;
@@ -721,7 +718,123 @@ public class GridView extends DemoView {
         });
         // end-source-example
         grid.setId("grid-with-filters");
-        addCard("Filtering", "Using text fields for filtering items", grid);
+        Div div = new Div();
+        div.addClassName("training-container");
+        div.add(createFilter(dataProvider));
+        grid.setItemDetailsRenderer(new ComponentRenderer<>(this::createPersonDetails));
+        grid.setDetailsVisibleOnClick(true);
+        grid.setSelectionMode(SelectionMode.NONE);
+        div.add(grid);
+        addCard("Filtering", "Using text fields for filtering items", div);
+    }
+
+    private Div createFilter(ListDataProvider<Person> dataProvider) {
+        Div div = new Div();
+        div.addClassName("filter-container");
+        div.setText("Filters: ");
+        List<String> persons = Arrays.asList("Person 10", "Person 1", "Person 3", "Person 20");
+        List<FilterButton> buttons = persons.stream().map(FilterButton::new).collect(Collectors.toList());
+        List<Filter> filters = buttons.stream().map(button -> {
+            div.add(button);
+            return new Filter(button, createFilterPredicate(buttons, (values, c) -> values.contains(c.getName())));
+        }).collect(Collectors.toList());
+
+        filters.forEach(f -> f.component.addFilterUpdateListener(e -> {
+            dataProvider.refreshAll();
+        }));
+        filters.stream().map(f -> f.predicate).forEach(dataProvider::addFilter);
+        return div;
+    }
+
+    private Div createPersonDetails(Person person) {
+        Div div = new Div();
+        div.addClassName("person-details");
+        div.getStyle().set("padding", "3rem");
+        div.getStyle().set("border", "1rem solid black");
+        div.getStyle().set("margin", "0.5rem 1rem");
+        div.getStyle().set("color", "red");
+
+        div.setText("Hello " + person.getName());
+        return div;
+    }
+
+    @AllArgsConstructor
+    private static class Filter {
+        @NonNull
+        private final FilterButton component;
+
+        @NonNull
+        private final SerializablePredicate<Person> predicate;
+    }
+
+    private static SerializablePredicate<Person> createFilterPredicate(List<FilterButton> filterList,
+                                                                          BiPredicate<Set<String>, Person> predicate) {
+        return person -> {
+            final Set<String> filterValues = filterList.stream().filter(FilterButton::getSelected).map(FilterButton::getText).collect(Collectors.toSet());
+            return (filterValues.isEmpty()) || predicate.test(filterValues, person);
+        };
+    }
+
+    @Tag("filter-button")
+    public static class FilterButton extends Component implements Clearable, FilterUpdateNotifier, ClickNotifier<FilterButton> {
+        final String text;
+
+        FilterButton(String text) {
+            this.text = text;
+            getElement().setText(text);
+            setStyles();
+            addClickListener(e -> {
+                e.getSource().setSelected(!e.getSource().getSelected());
+                fireEvent(new FilterUpdateEvent(this));
+            });
+        }
+
+        private void setStyles() {
+            Style style = getElement().getStyle();
+            style.set("display", "inline-block");
+            style.set("padding", "0.5rem");
+            style.set("margin", "0 1rem 1rem 0");
+            style.set("color", "#00b4f0");
+            style.set("background", "#f1f1f1");
+            style.set("border-radius", "5px");
+            style.set("cursor", "pointer");
+        }
+
+        public void setSelected(boolean selected) {
+            getElement().setProperty("selected", selected);
+        }
+
+        public boolean getSelected() {
+            return getElement().getProperty("selected", false);
+        }
+
+        public String getText() {
+            return text;
+        }
+
+        @Override
+        public void clear() {
+            getElement().setProperty("selected", false);
+        }
+
+        @Override
+        public Registration addFilterUpdateListener(ComponentEventListener<FilterUpdateEvent> listener) {
+            return addListener(FilterUpdateEvent.class, listener);
+        }
+    }
+
+    private interface Clearable {
+        void clear();
+    }
+
+    private interface FilterUpdateNotifier {
+        Registration addFilterUpdateListener(ComponentEventListener<FilterUpdateEvent> listener);
+    }
+
+    private static class FilterUpdateEvent extends ComponentEvent<Component> {
+        public FilterUpdateEvent(Component source) {
+            super(source, false);
+        }
     }
 
     private void createColumnApiExample() {
